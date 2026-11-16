@@ -1,138 +1,155 @@
-
-name: Build Godot Android APK
+name: Godot Android APK
 
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
+    paths:
+      - 'gra.zip'
+      - '**/gra.zip'
+      - '.github/workflows/android-build.yml'
 
 permissions:
   contents: read
 
 jobs:
   build:
-    name: Build Android APK
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
 
     steps:
+      # 1. Pobranie repozytorium
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Find and unpack game ZIP
+      # 2. Znalezienie i rozpakowanie ZIP
+      - name: Extract Godot game
         shell: bash
         run: |
-          ZIP_FILE=$(find . -type f -iname "gra.zip" | head -n 1)
+          ZIP_FILE=$(find . -type f -iname "gra.zip" \
+            -not -path "./.git/*" | head -n 1)
 
           if [ -z "$ZIP_FILE" ]; then
-            echo "ERROR: gra.zip not found!"
-            find . -type f -iname "*.zip"
+            echo "ERROR: Nie znaleziono gra.zip"
             exit 1
           fi
 
-          mkdir -p game
-          unzip -q "$ZIP_FILE" -d game
+          echo "Znaleziono: $ZIP_FILE"
 
-          PROJECT_FILE=$(find game -type f -name "project.godot" | head -n 1)
+          mkdir -p game
+          unzip -o "$ZIP_FILE" -d game
+
+          PROJECT_FILE=$(find game -type f \
+            -name "project.godot" | head -n 1)
 
           if [ -z "$PROJECT_FILE" ]; then
-            echo "ERROR: project.godot not found!"
+            echo "ERROR: Nie znaleziono project.godot"
             exit 1
           fi
 
           PROJECT_DIR=$(dirname "$PROJECT_FILE")
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-          echo "Project: $PROJECT_DIR"
+          echo "Projekt: $PROJECT_DIR"
 
+      # 3. Java
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
+      # 4. Android SDK
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
         with:
-          accept-android-sdk-licenses: 'true'
-          log-accepted-android-sdk-licenses: 'false'
-          packages: ''
+          accept-android-sdk-licenses: true
+          log-accepted-android-sdk-licenses: false
+          packages: 'platform-tools, platforms;android-35, build-tools;35.0.0'
 
-      - name: Install Android SDK packages
-        run: |
-          sdkmanager "platform-tools"
-          sdkmanager "platforms;android-35"
-          sdkmanager "build-tools;35.0.0"
-
-      - name: Install Godot 4.7.2
+      # 5. Pobranie Godot 4.7.2
+      - name: Download Godot
         shell: bash
         run: |
-          URL="https://github.com/godotengine/godot/releases/download/4.7.2-stable"
+          wget -q \
+            https://github.com/godotengine/godot/releases/download/4.7.2-stable/Godot_v4.7.2-stable_linux.x86_64.zip \
+            -O godot.zip
 
-          wget -q "$URL/Godot_v4.7.2-stable_linux.x86_64.zip"
-          unzip -q Godot_v4.7.2-stable_linux.x86_64.zip
+          unzip -q godot.zip -d godot
 
-          sudo install -m 755 \
-            Godot_v4.7.2-stable_linux.x86_64 \
-            /usr/local/bin/godot
+          chmod +x godot/Godot_v4.7.2-stable_linux.x86_64
 
-      - name: Install export templates
+          echo "$GITHUB_WORKSPACE/godot" >> "$GITHUB_PATH"
+
+          echo "GODOT_BIN=$GITHUB_WORKSPACE/godot/Godot_v4.7.2-stable_linux.x86_64" >> "$GITHUB_ENV"
+
+      # 6. Szablony eksportu Android
+      - name: Download Android export templates
         shell: bash
         run: |
-          URL="https://github.com/godotengine/godot/releases/download/4.7.2-stable"
+          wget -q \
+            https://github.com/godotengine/godot/releases/download/4.7.2-stable/Godot_v4.7.2-stable_export_templates.tpz \
+            -O templates.tpz
 
-          wget -q "$URL/Godot_v4.7.2-stable_export_templates.tpz"
+          mkdir -p "$HOME/.local/share/godot/export_templates/4.7.2.stable"
 
-          mkdir -p ~/.local/share/godot/export_templates/4.7.2.stable
+          unzip -q templates.tpz \
+            -d "$HOME/.local/share/godot/export_templates/4.7.2.stable"
 
-          unzip -q -j \
-            Godot_v4.7.2-stable_export_templates.tpz \
-            'templates/*' \
-            -d ~/.local/share/godot/export_templates/4.7.2.stable
+          if [ -d "$HOME/.local/share/godot/export_templates/4.7.2.stable/templates" ]; then
+            mv "$HOME/.local/share/godot/export_templates/4.7.2.stable/templates/"* \
+              "$HOME/.local/share/godot/export_templates/4.7.2.stable/"
+            rmdir "$HOME/.local/share/godot/export_templates/4.7.2.stable/templates"
+          fi
 
-      - name: Configure Android project
+      # 7. Konfiguracja Android SDK dla Godot
+      - name: Configure Godot Android SDK
+        shell: bash
+        run: |
+          mkdir -p "$HOME/.config/godot"
+
+          cat > "$HOME/.config/godot/editor_settings-4.tres" <<EOF
+          [gd_resource type="EditorSettings" format=3]
+
+          [resource]
+          export/android/android_sdk_path = "$ANDROID_HOME"
+          export/android/java_sdk_path = "$JAVA_HOME"
+          EOF
+
+      # 8. Przygotowanie projektu
+      - name: Prepare Godot project
         shell: bash
         run: |
           python3 - <<'PY'
           import os
           import re
 
-          path = os.path.join(
-              os.environ["PROJECT_DIR"],
-              "project.godot"
-          )
+          project = os.environ["PROJECT_DIR"]
+          path = os.path.join(project, "project.godot")
 
           with open(path, "r", encoding="utf-8") as f:
               content = f.read()
 
-          key = "textures/vram_compression/import_etc2_astc"
-          setting = key + "=true"
+          setting = "textures/vram_compression/import_etc2_astc=true"
 
-          pattern = r"(?m)^" + re.escape(key) + r"\s*=.*$"
-
-          if re.search(pattern, content):
-              content = re.sub(pattern, setting, content)
-          elif re.search(r"(?m)^\[rendering\]\s*$", content):
-              content = re.sub(
-                  r"(?m)^(\[rendering\]\s*)$",
-                  r"\1\n" + setting,
-                  content,
-                  count=1
-              )
+          if "[rendering]" in content:
+              if "textures/vram_compression/import_etc2_astc" not in content:
+                  content = content.replace(
+                      "[rendering]",
+                      "[rendering]\n" + setting,
+                      1
+                  )
           else:
               content += "\n[rendering]\n" + setting + "\n"
 
           with open(path, "w", encoding="utf-8") as f:
               f.write(content)
 
-          print("ETC2/ASTC enabled")
+          print("Przygotowano ustawienia projektu.")
           PY
 
+      # 9. Uniwersalny preset Android ARM64
       - name: Create Android export preset
         shell: bash
         run: |
-          mkdir -p "$PROJECT_DIR/build"
-
           cat > "$PROJECT_DIR/export_presets.cfg" <<'EOF'
           [preset.0]
 
@@ -161,36 +178,46 @@ jobs:
           architectures/arm64-v8a=true
           architectures/x86=false
           architectures/x86_64=false
-          package/unique_name="com.lesnaprzygoda.game"
-          package/name="Lesna Przygoda"
+          package/unique_name="com.example.game"
+          package/name="Godot Game"
           EOF
 
+      # 10. Import projektu
       - name: Import Godot project
+        shell: bash
         run: |
-          godot --headless --editor \
+          "$GODOT_BIN" --headless \
+            --editor \
             --path "$PROJECT_DIR" \
             --quit
 
+      # 11. Eksport APK
       - name: Export Android APK
+        shell: bash
         run: |
-          godot --headless \
+          mkdir -p "$PROJECT_DIR/build"
+          mkdir -p "$GITHUB_WORKSPACE/build"
+
+          "$GODOT_BIN" --headless \
             --path "$PROJECT_DIR" \
             --export-debug "Android" \
             "$PROJECT_DIR/build/game.apk"
 
-      - name: Verify APK
-        run: |
-          if [ ! -s "$PROJECT_DIR/build/game.apk" ]; then
-            echo "APK was not created!"
+          if [ ! -f "$PROJECT_DIR/build/game.apk" ]; then
+            echo "ERROR: APK nie został utworzony!"
             exit 1
           fi
 
-          ls -lh "$PROJECT_DIR/build/game.apk"
+          cp "$PROJECT_DIR/build/game.apk" \
+            "$GITHUB_WORKSPACE/build/game.apk"
 
+          echo "APK został utworzony!"
+
+      # 12. Udostępnienie APK
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Lesna-Przygoda-APK
-          path: game/**/*.apk
+          name: Godot-Android-APK
+          path: build/game.apk
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 30
