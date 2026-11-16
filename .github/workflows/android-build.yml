@@ -18,20 +18,35 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Unpack game ZIP
+      - name: Find and unpack game ZIP
+        shell: bash
         run: |
+          echo "Searching for ZIP files..."
+          find . -type f -iname "*.zip"
+
+          ZIP_FILE=$(find . -type f -iname "gra.zip" | head -n 1)
+
+          if [ -z "$ZIP_FILE" ]; then
+            echo "gra.zip not found!"
+            exit 1
+          fi
+
+          echo "Found: $ZIP_FILE"
+
           mkdir -p game
-          unzip -q gra.zip -d game
-          PROJECT_FILE=$(find game -name project.godot -type f | head -n 1)
+          unzip -q "$ZIP_FILE" -d game
+
+          PROJECT_FILE=$(find game -type f -name "project.godot" | head -n 1)
 
           if [ -z "$PROJECT_FILE" ]; then
-            echo "ERROR: Nie znaleziono project.godot w gra.zip"
+            echo "ERROR: project.godot not found!"
             exit 1
           fi
 
           PROJECT_DIR=$(dirname "$PROJECT_FILE")
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-          echo "Znaleziono projekt: $PROJECT_DIR"
+
+          echo "Godot project: $PROJECT_DIR"
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -43,16 +58,17 @@ jobs:
         uses: android-actions/setup-android@v3
 
       - name: Accept Android licenses
+        shell: bash
         run: |
           yes | sdkmanager --licenses || true
 
-      - name: Install Android SDK
+      - name: Install Android SDK packages
         run: |
           sdkmanager "platform-tools"
           sdkmanager "platforms;android-35"
           sdkmanager "build-tools;35.0.0"
 
-      - name: Install Godot
+      - name: Install Godot 4.5
         run: |
           wget -q https://github.com/godotengine/godot/releases/download/4.5-stable/Godot_v4.5-stable_linux.x86_64.zip
           unzip -q Godot_v4.5-stable_linux.x86_64.zip
@@ -67,6 +83,7 @@ jobs:
           cp -r /tmp/godot-templates/templates/* ~/.local/share/godot/export_templates/4.5.stable/
 
       - name: Create Android export preset
+        shell: bash
         run: |
           cat > "$PROJECT_DIR/export_presets.cfg" <<'EOF'
           [preset.0]
@@ -100,15 +117,25 @@ jobs:
           architectures/x86_64=false
           EOF
 
-      - name: Export APK
+      - name: Export Android APK
+        shell: bash
         run: |
           mkdir -p "$PROJECT_DIR/build"
-          godot --headless --path "$PROJECT_DIR" --export-debug "Android" "$PROJECT_DIR/build/game.apk"
+
+          godot --headless \
+            --path "$PROJECT_DIR" \
+            --export-debug "Android" \
+            "$PROJECT_DIR/build/game.apk"
+
+      - name: Verify APK
+        run: |
+          find "$PROJECT_DIR" -type f -name "*.apk"
+          test -f "$PROJECT_DIR/build/game.apk"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: Lesna-Przygoda-APK
-          path: "**/*.apk"
+          path: game/**/*.apk
           if-no-files-found: error
           retention-days: 14
