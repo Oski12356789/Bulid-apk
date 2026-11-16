@@ -1,3 +1,4 @@
+
 name: Godot Android APK
 
 on:
@@ -20,7 +21,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. Znalezienie i rozpakowanie ZIP
+      # 2. Znalezienie i rozpakowanie gry
       - name: Extract Godot game
         shell: bash
         run: |
@@ -31,8 +32,6 @@ jobs:
             echo "ERROR: Nie znaleziono gra.zip"
             exit 1
           fi
-
-          echo "Znaleziono: $ZIP_FILE"
 
           mkdir -p game
           unzip -o "$ZIP_FILE" -d game
@@ -50,7 +49,7 @@ jobs:
 
           echo "Projekt: $PROJECT_DIR"
 
-      # 3. Java
+      # 3. Java 17
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
@@ -59,13 +58,21 @@ jobs:
 
       # 4. Android SDK
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
         with:
           accept-android-sdk-licenses: true
           log-accepted-android-sdk-licenses: false
-          packages: 'platform-tools, platforms;android-35, build-tools;35.0.0'
 
-      # 5. Pobranie Godot 4.7.2
+      # 5. Instalacja wymaganych pakietów Android
+      - name: Install Android packages
+        shell: bash
+        run: |
+          sdkmanager --install \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
+
+      # 6. Pobranie Godot 4.7.2
       - name: Download Godot
         shell: bash
         run: |
@@ -77,11 +84,9 @@ jobs:
 
           chmod +x godot/Godot_v4.7.2-stable_linux.x86_64
 
-          echo "$GITHUB_WORKSPACE/godot" >> "$GITHUB_PATH"
-
           echo "GODOT_BIN=$GITHUB_WORKSPACE/godot/Godot_v4.7.2-stable_linux.x86_64" >> "$GITHUB_ENV"
 
-      # 6. Szablony eksportu Android
+      # 7. Szablony eksportu
       - name: Download Android export templates
         shell: bash
         run: |
@@ -100,7 +105,7 @@ jobs:
             rmdir "$HOME/.local/share/godot/export_templates/4.7.2.stable/templates"
           fi
 
-      # 7. Konfiguracja Android SDK dla Godot
+      # 8. Konfiguracja SDK i Javy dla Godot
       - name: Configure Godot Android SDK
         shell: bash
         run: |
@@ -114,13 +119,12 @@ jobs:
           export/android/java_sdk_path = "$JAVA_HOME"
           EOF
 
-      # 8. Przygotowanie projektu
+      # 9. Ustawienia tekstur
       - name: Prepare Godot project
         shell: bash
         run: |
           python3 - <<'PY'
           import os
-          import re
 
           project = os.environ["PROJECT_DIR"]
           path = os.path.join(project, "project.godot")
@@ -143,10 +147,10 @@ jobs:
           with open(path, "w", encoding="utf-8") as f:
               f.write(content)
 
-          print("Przygotowano ustawienia projektu.")
+          print("Ustawienia projektu przygotowane.")
           PY
 
-      # 9. Uniwersalny preset Android ARM64
+      # 10. Tworzenie presetu Android
       - name: Create Android export preset
         shell: bash
         run: |
@@ -182,7 +186,7 @@ jobs:
           package/name="Godot Game"
           EOF
 
-      # 10. Import projektu
+      # 11. Import projektu
       - name: Import Godot project
         shell: bash
         run: |
@@ -191,7 +195,7 @@ jobs:
             --path "$PROJECT_DIR" \
             --quit
 
-      # 11. Eksport APK
+      # 12. Eksport APK
       - name: Export Android APK
         shell: bash
         run: |
@@ -211,9 +215,9 @@ jobs:
           cp "$PROJECT_DIR/build/game.apk" \
             "$GITHUB_WORKSPACE/build/game.apk"
 
-          echo "APK został utworzony!"
+          echo "APK utworzony poprawnie."
 
-      # 12. Udostępnienie APK
+      # 13. Udostępnienie APK
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
@@ -221,3 +225,4 @@ jobs:
           path: build/game.apk
           if-no-files-found: error
           retention-days: 30
+
