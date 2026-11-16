@@ -22,13 +22,11 @@ jobs:
       - name: Find and unpack game ZIP
         shell: bash
         run: |
-          echo "Searching for game ZIP..."
-          find . -type f -iname "*.zip"
-
           ZIP_FILE=$(find . -type f -iname "gra.zip" | head -n 1)
 
           if [ -z "$ZIP_FILE" ]; then
             echo "ERROR: gra.zip not found!"
+            find . -type f -iname "*.zip"
             exit 1
           fi
 
@@ -45,7 +43,7 @@ jobs:
           PROJECT_DIR=$(dirname "$PROJECT_FILE")
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-          echo "Project found: $PROJECT_DIR"
+          echo "Project: $PROJECT_DIR"
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -69,21 +67,21 @@ jobs:
       - name: Install Godot 4.7.2
         shell: bash
         run: |
-          GODOT_URL="https://github.com/godotengine/godot/releases/download/4.7.2-stable"
+          URL="https://github.com/godotengine/godot/releases/download/4.7.2-stable"
 
-          wget -q "$GODOT_URL/Godot_v4.7.2-stable_linux.x86_64.zip"
+          wget -q "$URL/Godot_v4.7.2-stable_linux.x86_64.zip"
           unzip -q Godot_v4.7.2-stable_linux.x86_64.zip
 
           sudo install -m 755 \
             Godot_v4.7.2-stable_linux.x86_64 \
             /usr/local/bin/godot
 
-      - name: Install Godot export templates
+      - name: Install export templates
         shell: bash
         run: |
-          GODOT_URL="https://github.com/godotengine/godot/releases/download/4.7.2-stable"
+          URL="https://github.com/godotengine/godot/releases/download/4.7.2-stable"
 
-          wget -q "$GODOT_URL/Godot_v4.7.2-stable_export_templates.tpz"
+          wget -q "$URL/Godot_v4.7.2-stable_export_templates.tpz"
 
           mkdir -p ~/.local/share/godot/export_templates/4.7.2.stable
 
@@ -92,9 +90,49 @@ jobs:
             'templates/*' \
             -d ~/.local/share/godot/export_templates/4.7.2.stable
 
+      - name: Configure Android project
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os
+          import re
+
+          path = os.path.join(
+              os.environ["PROJECT_DIR"],
+              "project.godot"
+          )
+
+          with open(path, "r", encoding="utf-8") as f:
+              content = f.read()
+
+          key = "textures/vram_compression/import_etc2_astc"
+          setting = key + "=true"
+
+          pattern = r"(?m)^" + re.escape(key) + r"\s*=.*$"
+
+          if re.search(pattern, content):
+              content = re.sub(pattern, setting, content)
+          elif re.search(r"(?m)^\[rendering\]\s*$", content):
+              content = re.sub(
+                  r"(?m)^(\[rendering\]\s*)$",
+                  r"\1\n" + setting,
+                  content,
+                  count=1
+              )
+          else:
+              content += "\n[rendering]\n" + setting + "\n"
+
+          with open(path, "w", encoding="utf-8") as f:
+              f.write(content)
+
+          print("ETC2/ASTC enabled")
+          PY
+
       - name: Create Android export preset
         shell: bash
         run: |
+          mkdir -p "$PROJECT_DIR/build"
+
           cat > "$PROJECT_DIR/export_presets.cfg" <<'EOF'
           [preset.0]
 
@@ -119,12 +157,12 @@ jobs:
           custom_template/release=""
           gradle_build/use_gradle_build=false
           gradle_build/export_format=0
-          gradle_build/min_sdk="23"
-          gradle_build/target_sdk="35"
           architectures/armeabi-v7a=false
           architectures/arm64-v8a=true
           architectures/x86=false
           architectures/x86_64=false
+          package/unique_name="com.lesnaprzygoda.game"
+          package/name="Lesna Przygoda"
           EOF
 
       - name: Import Godot project
@@ -134,10 +172,7 @@ jobs:
             --quit
 
       - name: Export Android APK
-        shell: bash
         run: |
-          mkdir -p "$PROJECT_DIR/build"
-
           godot --headless \
             --path "$PROJECT_DIR" \
             --export-debug "Android" \
@@ -145,7 +180,11 @@ jobs:
 
       - name: Verify APK
         run: |
-          test -s "$PROJECT_DIR/build/game.apk"
+          if [ ! -s "$PROJECT_DIR/build/game.apk" ]; then
+            echo "APK was not created!"
+            exit 1
+          fi
+
           ls -lh "$PROJECT_DIR/build/game.apk"
 
       - name: Upload APK
