@@ -1,3 +1,4 @@
+
 name: Build Godot Android APK
 
 on:
@@ -11,11 +12,10 @@ permissions:
 
 jobs:
   build:
-    name: Build Android APK
     runs-on: ubuntu-latest
 
     steps:
-      - name: Download project
+      - name: Checkout
         uses: actions/checkout@v5
 
       - name: Setup Java
@@ -27,13 +27,17 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android SDK packages
+      - name: Accept Android licenses
+        run: |
+          yes | sdkmanager --licenses || true
+
+      - name: Install Android SDK
         run: |
           sdkmanager "platform-tools"
           sdkmanager "platforms;android-35"
           sdkmanager "build-tools;35.0.0"
 
-      - name: Export Godot project
+      - name: Export APK
         uses: firebelley/godot-export@v8.0.0
         with:
           godot_executable_download_url: https://github.com/godotengine/godot/releases/download/4.4.1-stable/Godot_v4.4.1-stable_linux.x86_64.zip
@@ -42,17 +46,14 @@ jobs:
           presets_to_export: Android
           archive_output: false
 
-      - name: Find APK
+      - name: Locate APK
         run: |
-          find . -type f -name "*.apk" -print
+          find . -type f -name "*.apk"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Godot-Android-APK
-          path: |
-            *.apk
-            build/*.apk
-            export/*.apk
+          name: Lesna-Przygoda-APK
+          path: "**/*.apk"
           if-no-files-found: error
           retention-days: 14
