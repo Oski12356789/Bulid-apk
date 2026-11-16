@@ -12,11 +12,11 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -26,18 +26,28 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: ''
 
-      - name: Accept Android licenses
+      - name: Accept SDK licenses
+        shell: bash
         run: |
-          yes | sdkmanager --licenses || true
+          mkdir -p "$ANDROID_HOME/licenses"
+          printf '%s\n' \
+            '8933bad161af4178b1185d1a37fbf41ea5269c55' \
+            > "$ANDROID_HOME/licenses/android-sdk-license"
+          printf '%s\n' \
+            '84831b9409646a918e30573bab4c9c91346d8abd' \
+            > "$ANDROID_HOME/licenses/android-sdk-preview-license"
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses || true
 
-      - name: Install Android SDK
+      - name: Install SDK packages
         run: |
           sdkmanager "platform-tools"
           sdkmanager "platforms;android-35"
           sdkmanager "build-tools;35.0.0"
 
-      - name: Export APK
+      - name: Export Godot APK
         uses: firebelley/godot-export@v8.0.0
         with:
           godot_executable_download_url: https://github.com/godotengine/godot/releases/download/4.4.1-stable/Godot_v4.4.1-stable_linux.x86_64.zip
@@ -45,10 +55,6 @@ jobs:
           relative_project_path: ./
           presets_to_export: Android
           archive_output: false
-
-      - name: Locate APK
-        run: |
-          find . -type f -name "*.apk"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
