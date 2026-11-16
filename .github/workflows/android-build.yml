@@ -225,4 +225,3 @@ jobs:
           path: build/game.apk
           if-no-files-found: error
           retention-days: 30
-
