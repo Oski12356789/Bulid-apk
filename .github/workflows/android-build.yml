@@ -33,6 +33,8 @@ jobs:
             exit 1
           fi
 
+          echo "Znaleziono: $ZIP_FILE"
+
           mkdir -p game
           unzip -o "$ZIP_FILE" -d game
 
@@ -63,7 +65,7 @@ jobs:
           accept-android-sdk-licenses: true
           log-accepted-android-sdk-licenses: false
 
-      # 5. Instalacja wymaganych pakietów Android
+      # 5. Instalacja pakietów Android
       - name: Install Android packages
         shell: bash
         run: |
@@ -105,7 +107,7 @@ jobs:
             rmdir "$HOME/.local/share/godot/export_templates/4.7.2.stable/templates"
           fi
 
-      # 8. Konfiguracja SDK i Javy dla Godot
+      # 8. Konfiguracja SDK i Javy
       - name: Configure Godot Android SDK
         shell: bash
         run: |
@@ -119,7 +121,7 @@ jobs:
           export/android/java_sdk_path = "$JAVA_HOME"
           EOF
 
-      # 9. Ustawienia tekstur
+      # 9. Przygotowanie projektu
       - name: Prepare Godot project
         shell: bash
         run: |
@@ -147,7 +149,7 @@ jobs:
           with open(path, "w", encoding="utf-8") as f:
               f.write(content)
 
-          print("Ustawienia projektu przygotowane.")
+          print("Projekt przygotowany.")
           PY
 
       # 10. Tworzenie presetu Android
@@ -166,7 +168,7 @@ jobs:
           export_filter="all_resources"
           include_filter=""
           exclude_filter=""
-          export_path="build/game.apk"
+          export_path=""
           encryption_include_filters=""
           encryption_exclude_filters=""
           encrypt_pck=false
@@ -195,33 +197,34 @@ jobs:
             --path "$PROJECT_DIR" \
             --quit
 
-      # 12. Eksport APK
+      # 12. Eksport APK poza projektem
       - name: Export Android APK
         shell: bash
         run: |
-          mkdir -p "$PROJECT_DIR/build"
-          mkdir -p "$GITHUB_WORKSPACE/build"
+          mkdir -p "$GITHUB_WORKSPACE/output"
+
+          APK_PATH="$GITHUB_WORKSPACE/output/game.apk"
+
+          echo "Projekt: $PROJECT_DIR"
+          echo "APK: $APK_PATH"
 
           "$GODOT_BIN" --headless \
             --path "$PROJECT_DIR" \
             --export-debug "Android" \
-            "$PROJECT_DIR/build/game.apk"
+            "$APK_PATH"
 
-          if [ ! -f "$PROJECT_DIR/build/game.apk" ]; then
+          if [ ! -f "$APK_PATH" ]; then
             echo "ERROR: APK nie został utworzony!"
             exit 1
           fi
 
-          cp "$PROJECT_DIR/build/game.apk" \
-            "$GITHUB_WORKSPACE/build/game.apk"
-
-          echo "APK utworzony poprawnie."
+          echo "APK utworzony poprawnie!"
 
       # 13. Udostępnienie APK
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: Godot-Android-APK
-          path: build/game.apk
+          path: output/game.apk
           if-no-files-found: error
           retention-days: 30
